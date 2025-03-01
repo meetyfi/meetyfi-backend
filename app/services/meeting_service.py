@@ -1,7 +1,7 @@
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 from datetime import datetime
 
 from app.database import Meeting, Employee, Manager, MeetingStatus

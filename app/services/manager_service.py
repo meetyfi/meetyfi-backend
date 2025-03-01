@@ -4,7 +4,7 @@ from sqlalchemy import and_, or_, func
 from typing import Dict, List, Any, Optional
 from datetime import datetime, timedelta
 
-from app.database import Manager, Employee, Meeting, Location, MeetingStatus
+from app.database import Manager, Employee, Meeting, Location, MeetingStatus, EmployeeMeeting, ProposedDate
 from app.schemas.manager import (
     ManagerProfileUpdate, MeetingCreateRequest, MeetingStatusUpdateRequest
 )
@@ -26,7 +26,7 @@ def get_manager_profile(db: Session, manager_id: int) -> Dict[str, Any]:
     """
     manager = db.query(Manager).filter(Manager.id == manager_id).first()
     if not manager:
-        raise NotFoundException("Manager not found")
+        raise UserNotFoundException("Manager not found")
     
     return {
         "id": manager.id,
@@ -55,7 +55,7 @@ def update_manager_profile(db: Session, manager_id: int, profile_data: ManagerPr
     """
     manager = db.query(Manager).filter(Manager.id == manager_id).first()
     if not manager:
-        raise NotFoundException("Manager not found")
+        raise UserNotFoundException("Manager not found")
     
     # Update fields if provided
     if profile_data.name is not None:
@@ -259,14 +259,14 @@ def update_meeting_status(
     """
     meeting = db.query(Meeting).filter(Meeting.id == meeting_id).first()
     if not meeting:
-        raise NotFoundException("Meeting not found")
+        raise UserNotFoundException("Meeting not found")
 
     # Check if the manager is authorized to update the meeting
     if meeting.created_by_id != manager_id or meeting.created_by_type != "manager":
         raise PermissionDeniedException("You are not authorized to update this meeting")
 
     # Validate status transition
-    validate_meeting_status_transition(meeting.status, status_data.status)
+    MeetingStatusUpdateRequest(meeting.status, status_data.status)
 
     # Update the meeting status
     meeting.status = status_data.status
@@ -295,7 +295,7 @@ def add_employee(manager_id: int, employee_data: dict, db: Session):
     # Check if an employee with the same email already exists
     existing_employee = db.query(Employee).filter(Employee.email == employee_data["email"]).first()
     if existing_employee:
-        raise CustomException(status_code=400, detail="Employee with this email already exists.")
+        raise HTTPException(status_code=400, detail="Employee with this email already exists.")
 
     # Create a new employee
     new_employee = Employee(
@@ -327,7 +327,7 @@ def get_employee_by_id(employee_id: int, manager_id: int, db: Session):
     ).first()
 
     if not employee:
-        raise CustomException(
+        raise HTTPException(
             status_code=404,
             detail="Employee not found or doesn't belong to this manager"
         )
@@ -351,7 +351,7 @@ def delete_employee(employee_id: int, manager_id: int, db: Session):
     ).first()
     
     if not employee:
-        raise CustomException(
+        raise HTTPException(
             status_code=404,
             detail="Employee not found or doesn't belong to this manager"
         )
@@ -371,46 +371,29 @@ def select_meeting_date(
 ) -> None:
     """
     Select a date for a meeting from proposed dates
-
-    Args:
-        db: Database session
-        manager_id: ID of the manager
-        meeting_id: ID of the meeting
-        selected_date: Selected date for the meeting
     """
     meeting = db.query(Meeting).filter(Meeting.id == meeting_id).first()
     if not meeting:
-        raise NotFoundException("Meeting not found")
+        raise HTTPException(status_code=404, detail="Meeting not found")
 
-    # Check if the manager is authorized to update the meeting
     if meeting.manager_id != manager_id:
-        raise PermissionDeniedException("You are not authorized to update this meeting")
-
-    # Check if the selected date is in the proposed dates
+        raise HTTPException(status_code=403, detail="You are not authorized to update this meeting")
+    
     proposed_dates = db.query(ProposedDate).filter(ProposedDate.meeting_id == meeting_id).all()
     if not any(date.date == selected_date for date in proposed_dates):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Selected date is not in the proposed dates"
-        )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Selected date is not in the proposed dates")
 
-    # Update the meeting date and mark the selected date
     meeting.date = selected_date
     for date in proposed_dates:
         date.is_selected = (date.date == selected_date)
 
     db.commit()
 
-    # Notify employees about the selected date
     for employee in meeting.employees:
-        send_meeting_date_selection(
-            employee.email,
-            employee.name,
-            meeting.title,
-            selected_date
-        )
+        send_meeting_notification(employee.email, employee.name, meeting.title, selected_date)
 
 def get_meetings(
+    db: Session,  # ✅ Add this parameter
     manager_id: int, 
     skip: int = 0, 
     limit: int = 100, 
@@ -426,7 +409,7 @@ def get_meetings(
         query = query.filter(Meeting.status == status)
     
     if employee_id:
-        query = query.join(EmployeeMeeting).filter(EmployeeMeeting.employee_id == employee_id)
+        query = query.join(EmployeeMeeting).filter(EmployeeMeeting.meeting_id == Meeting.id, EmployeeMeeting.employee_id == employee_id)
     
     meetings = query.order_by(Meeting.date.desc()).offset(skip).limit(limit).all()
     

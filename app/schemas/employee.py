@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional, List, Dict, Any
 from datetime import datetime, date
 from enum import Enum
@@ -22,7 +22,7 @@ class EmployeeProfileUpdate(BaseModel):
     phone: Optional[str] = None
     profile_picture: Optional[str] = None
 
-    @validator('phone')
+    @field_validator('phone')
     def validate_phone_number(cls, v):
         if v:
             validate_phone(v)
@@ -65,7 +65,7 @@ class MeetingRequestCreate(BaseModel):
     duration: int = Field(..., gt=0, le=480)  # Max 8 hours
     location: Optional[str] = None
 
-    @validator('proposed_dates')
+    @field_validator('proposed_dates')
     def validate_dates(cls, v):
         validate_proposed_dates(v)
         return v

@@ -270,7 +270,7 @@ def request_meeting(db: Session, employee_id: int, meeting_data: MeetingRequestC
     manager = db.query(Manager).filter(Manager.id == employee.manager_id).first()
     
     # Send notification to manager
-    send_meeting_request_notification(
+    send_meeting_notification(
         manager.email,
         manager.name,
         employee.name,

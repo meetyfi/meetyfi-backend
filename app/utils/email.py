@@ -63,13 +63,25 @@ def send_email(
         logger.error(f"Failed to send email to {recipient_email}: {str(e)}")
         return False
 
-def send_otp_email(email: str, otp: str) -> bool:
-    """Send OTP verification email to manager"""
+def send_otp_email(email: str, otp: str, name: str = None) -> bool:
+    """
+    Send OTP verification email to manager
+    
+    Args:
+        email: Email address to send the OTP to
+        otp: One-time password for verification
+        name: User's name (optional)
+    """
     subject = "Verify Your Account - OTP"
+    
+    # Personalize the greeting if name is provided
+    greeting = f"Hello {name}," if name else "Hello,"
+    
     html_content = f"""
     <html>
     <body>
         <h2>Account Verification</h2>
+        <p>{greeting}</p>
         <p>Thank you for registering with our service. Please use the following OTP to verify your account:</p>
         <h3 style="background-color: #f0f0f0; padding: 10px; text-align: center; font-size: 24px;">{otp}</h3>
         <p>This OTP is valid for 10 minutes.</p>
@@ -77,7 +89,8 @@ def send_otp_email(email: str, otp: str) -> bool:
     </body>
     </html>
     """
-    text_content = f"Your OTP for account verification is: {otp}. This OTP is valid for 10 minutes."
+    
+    text_content = f"{greeting}\n\nYour OTP for account verification is: {otp}. This OTP is valid for 10 minutes."
     
     return send_email(email, subject, html_content, text_content)
 

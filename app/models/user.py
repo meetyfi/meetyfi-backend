@@ -1,6 +1,7 @@
-from pydantic import BaseModel, EmailStr, Field, validator
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from typing import Optional, List
 from datetime import datetime
+import re
 
 from app.utils.validators import validate_email, validate_password, validate_phone
 
@@ -8,7 +9,7 @@ class UserBase(BaseModel):
     email: EmailStr
     name: str = Field(..., min_length=2, max_length=100)
     
-    @validator('email')
+    @field_validator('email')
     def validate_email_format(cls, v):
         validate_email(v)
         return v
@@ -16,7 +17,7 @@ class UserBase(BaseModel):
 class PasswordMixin(BaseModel):
     password: str = Field(..., min_length=8)
     
-    @validator('password')
+    @field_validator('password')
     def validate_password_strength(cls, v):
         validate_password(v)
         return v
@@ -26,8 +27,9 @@ class ManagerBase(UserBase):
     company_size: int = Field(..., gt=0)
     phone: Optional[str] = None
     profile_picture: Optional[str] = None
+    otp: Optional[str] = None  
     
-    @validator('phone')
+    @field_validator('phone')
     def validate_phone(cls, v):
         # This is likely where the validation happens
         # Check what format is expected here
@@ -53,7 +55,7 @@ class ManagerUpdate(BaseModel):
     phone: Optional[str] = None
     profile_picture: Optional[str] = None
     
-    @validator('phone')
+    @field_validator('phone')
     def validate_phone_number(cls, v):
         if v:
             validate_phone(v)
@@ -65,7 +67,7 @@ class EmployeeBase(UserBase):
     phone: Optional[str] = None
     profile_picture: Optional[str] = None
     
-    @validator('phone')
+    @field_validator('phone')
     def validate_phone_number(cls, v):
         if v:
             validate_phone(v)
@@ -91,7 +93,7 @@ class EmployeeUpdate(BaseModel):
     phone: Optional[str] = None
     profile_picture: Optional[str] = None
     
-    @validator('phone')
+    @field_validator('phone')
     def validate_phone_number(cls, v):
         if v:
             validate_phone(v)

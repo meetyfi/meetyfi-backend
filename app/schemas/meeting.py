@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 from enum import Enum
@@ -31,7 +31,7 @@ class MeetingCreateRequest(MeetingBase):
 class MeetingRequestCreate(MeetingBase):
     proposed_dates: List[datetime] = Field(..., min_items=1, max_items=5)
 
-    @validator('proposed_dates')
+    @field_validator('proposed_dates')
     def validate_dates(cls, v):
         validate_proposed_dates(v)
         return v
@@ -45,7 +45,7 @@ class MeetingStatusUpdate(BaseModel):
     status: MeetingStatus
     reason: Optional[str] = None
 
-    @validator('status')
+    @field_validator('status')
     def validate_status(cls, v, values, **kwargs):
         if v not in [MeetingStatus.ACCEPTED, MeetingStatus.REJECTED, MeetingStatus.CANCELLED]:
             raise ValueError(f"Invalid status: {v}")

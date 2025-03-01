@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional, List
 from datetime import datetime
 from enum import Enum
@@ -42,7 +42,7 @@ class MeetingStatusUpdate(BaseModel):
     status: MeetingStatus
     reason: Optional[str] = None
 
-    @validator('status')
+    @field_validator('status')
     def validate_status(cls, v):
         if v not in [MeetingStatus.ACCEPTED, MeetingStatus.REJECTED, MeetingStatus.CANCELLED]:
             raise ValueError(f"Invalid status: {v}")

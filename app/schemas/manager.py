@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr, Field, validator
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from typing import Optional, List, Dict, Any
 from datetime import datetime, date
 from enum import Enum
@@ -22,7 +22,7 @@ class ManagerProfileUpdate(BaseModel):
     phone: Optional[str] = None
     profile_picture: Optional[str] = None
 
-    @validator('phone')
+    @field_validator('phone')
     def validate_phone_number(cls, v):
         if v:
             validate_phone(v)

@@ -85,7 +85,7 @@ def register_manager(db: Session, manager_data: ManagerSignupRequest) -> int:
         # Send OTP email
         send_otp_email(manager_data.email, otp, manager_data.name)
         
-        return new_manager.id
+        return {"manager_id": new_manager.id, "message": "Manager registered successfully"}
     except IntegrityError:
         db.rollback()
         raise HTTPException(

@@ -31,6 +31,9 @@ class Manager(Base):
     profile_picture = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    
+    otp = Column(String, nullable=True)  
+    otp_created_at = Column(DateTime, nullable=True)
 
     employees = relationship("Employee", back_populates="manager")
     meetings = relationship("Meeting", back_populates="manager")
@@ -97,9 +100,11 @@ class Meeting(Base):
     manager_id = Column(Integer, ForeignKey("managers.id"))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    
 
     manager = relationship("Manager", back_populates="meetings")
     employees = relationship("EmployeeMeeting", back_populates="meeting")
+    proposed_dates = relationship("ProposedDate", back_populates="meeting", cascade="all, delete-orphan")
 
 class EmployeeMeeting(Base):
     __tablename__ = "employee_meetings"

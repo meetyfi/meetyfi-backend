@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr, Field, validator
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from typing import Optional, Dict, Any
 from enum import Enum
 
@@ -19,17 +19,17 @@ class ManagerSignupRequest(BaseModel):
     phone: Optional[str] = None
     profile_picture: Optional[str] = None
 
-    @validator('email')
+    @field_validator('email')
     def validate_email_format(cls, v):
         validate_email(v)
         return v
 
-    @validator('password')
+    @field_validator('password')
     def validate_password_strength(cls, v):
         validate_password(v)
         return v
 
-    @validator('phone')
+    @field_validator('phone')
     def validate_phone_number(cls, v):
         if v:
             validate_phone(v)
@@ -76,7 +76,7 @@ class EmployeeVerifyRequest(BaseModel):
     verification_token: str
     password: str = Field(..., min_length=8)
 
-    @validator('password')
+    @field_validator('password')
     def validate_password_strength(cls, v):
         validate_password(v)
         return v
