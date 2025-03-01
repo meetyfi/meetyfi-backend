@@ -1,61 +1,89 @@
-from pydantic import BaseModel, EmailStr, Field, validator
-from typing import Optional
-from datetime import datetime
+from pydantic import BaseModel, Field, validator
+from typing import Optional, List, Dict, Any
+from datetime import datetime, date
 from enum import Enum
 
-class EmployeeRole(str, Enum):
-    SALES = "sales"
-    SUPPORT = "support"
-    MANAGER = "manager"
-    ADMIN = "admin"
+from app.utils.validators import validate_phone, validate_proposed_dates
 
-class LocationUpdate(BaseModel):
-    latitude: float = Field(..., ge=-90, le=90)
-    longitude: float = Field(..., ge=-180, le=180)
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+class EmployeeProfileResponse(BaseModel):
+    id: int
+    email: str
+    name: str
+    role: Optional[str] = None
+    department: Optional[str] = None
+    phone: Optional[str] = None
+    profile_picture: Optional[str] = None
+    is_verified: bool
+    created_at: datetime
+    manager: Dict[str, Any]  # Basic manager info
 
-class EmployeeBase(BaseModel):
-    email: EmailStr
-    name: str = Field(..., min_length=2, max_length=50)
-    role: EmployeeRole
-    description: Optional[str] = Field(None, max_length=500)
-    phone_number: Optional[str] = Field(None, regex=r'^\+?1?\d{9,15}$')
+class EmployeeProfileUpdate(BaseModel):
+    name: Optional[str] = Field(None, min_length=2, max_length=100)
+    phone: Optional[str] = None
+    profile_picture: Optional[str] = None
 
-class EmployeeCreate(EmployeeBase):
-    manager_id: str
-    initial_password: str = Field(..., min_length=8)
-
-class EmployeeUpdate(BaseModel):
-    name: Optional[str] = Field(None, min_length=2, max_length=50)
-    role: Optional[EmployeeRole] = None
-    description: Optional[str] = Field(None, max_length=500)
-    phone_number: Optional[str] = Field(None, regex=r'^\+?1?\d{9,15}$')
-    profile_photo: Optional[str] = None
-
-class EmployeeLocation(BaseModel):
-    employee_id: str
-    location: LocationUpdate
-
-    @validator('location')
-    def validate_timestamp(cls, v):
-        if v.timestamp > datetime.utcnow():
-            raise ValueError('Location timestamp cannot be in the future')
+    @validator('phone')
+    def validate_phone_number(cls, v):
+        if v:
+            validate_phone(v)
         return v
 
-class EmployeeResponse(EmployeeBase):
-    id: str
-    manager_id: str
-    profile_photo: Optional[str] = None
-    last_location: Optional[LocationUpdate] = None
+# Manager details
+class ManagerResponse(BaseModel):
+    id: int
+    name: str
+    email: str
+    company_name: str
+    phone: Optional[str] = None
+    profile_picture: Optional[str] = None
+
+# Manager availability
+class TimeSlot(BaseModel):
+    start_time: datetime
+    end_time: datetime
+
+class ManagerAvailabilityResponse(BaseModel):
+    available_slots: List[TimeSlot]
+
+# Location
+class LocationCreateRequest(BaseModel):
+    latitude: float = Field(..., ge=-90, le=90)
+    longitude: float = Field(..., ge=-180, le=180)
+    address: str
+
+# Meetings
+class MeetingStatus(str, Enum):
+    PENDING = "pending"
+    ACCEPTED = "accepted"
+    REJECTED = "rejected"
+    CANCELLED = "cancelled"
+
+class MeetingRequestCreate(BaseModel):
+    title: str = Field(..., min_length=3, max_length=100)
+    description: Optional[str] = None
+    proposed_dates: List[datetime] = Field(..., min_items=1, max_items=5)
+    duration: int = Field(..., gt=0, le=480)  # Max 8 hours
+    location: Optional[str] = None
+
+    @validator('proposed_dates')
+    def validate_dates(cls, v):
+        validate_proposed_dates(v)
+        return v
+
+class MeetingResponse(BaseModel):
+    id: int
+    title: str
+    description: Optional[str] = None
+    date: datetime
+    duration: int
+    location: Optional[str] = None
+    status: MeetingStatus
+    rejection_reason: Optional[str] = None
+    manager: Dict[str, Any]  # Basic manager info
     created_at: datetime
-    updated_at: Optional[datetime] = None
-    is_active: bool = True
 
-    class Config:
-        from_attributes = True
-
-class EmployeeSearchParams(BaseModel):
-    role: Optional[EmployeeRole] = None
-    manager_id: Optional[str] = None
-    is_active: Optional[bool] = None
-    search_term: Optional[str] = None
+class MeetingListResponse(BaseModel):
+    meetings: List[MeetingResponse]
+    total: int
+    page: int
+    limit: int
