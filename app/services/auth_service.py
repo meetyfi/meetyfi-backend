@@ -93,43 +93,61 @@ def register_manager(db: Session, manager_data: ManagerSignupRequest) -> int:
             detail="Error creating manager account"
         )
 
-def verify_manager_otp(db: Session, verify_data: VerifyOTPRequest) -> str:
+from datetime import datetime, date, time
+
+def verify_manager_otp(db: Session, request: VerifyOTPRequest):
     """
-    Verify OTP for manager account
-    
-    Args:
-        db: Database session
-        verify_data: OTP verification data
-        
-    Returns:
-        str: Access token
+    Verify OTP for manager signup
+
+    :param db: Database session
+    :param request: VerifyOTPRequest containing email and OTP
+    :return: VerifyOTPResponse with access token
+    :raises: HTTPException if OTP is invalid or expired
     """
-    manager = db.query(Manager).filter(Manager.email == verify_data.email).first()
+    # Find the manager by email
+    manager = db.query(Manager).filter(Manager.email == request.email).first()
     if not manager:
-        raise UserNotFoundException("Manager not found")
-    
-    # Check if OTP is valid
-    if manager.otp != verify_data.otp:
-        raise OTPVerificationException("Invalid OTP")
-    
-    # Check if OTP is expired (10 minutes validity)
-    otp_expiry = manager.otp_created_at + timedelta(minutes=10)
-    if datetime.utcnow() > otp_expiry:
-        raise OTPVerificationException("OTP expired")
-    
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Manager not found"
+        )
+
+    # Check if OTP matches
+    if manager.otp != request.otp:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid OTP"
+        )
+
+    # Check if OTP is expired
+    otp_expiry = manager.otp_expiry
+
+    # Convert date to datetime if needed
+    if isinstance(otp_expiry, date) and not isinstance(otp_expiry, datetime):
+        # Convert date to datetime by setting time to midnight
+        otp_expiry = datetime.combine(otp_expiry, time.min)
+
+            raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="OTP expired"
+        )
+
     # Mark manager as verified
     manager.is_verified = True
-    manager.otp = None
-    manager.otp_created_at = None
+    manager.otp = None  # Clear OTP after verification
+    manager.otp_expiry = None  # Clear OTP expiry
+
     db.commit()
-    
-    # Generate access token
-    access_token = create_access_token({
-        "sub": manager.id,
-        "type": UserType.MANAGER.value
-    })
-    
-    return access_token
+
+    # Generate JWT token
+    access_token = create_access_token(
+        data={"sub": manager.email, "user_type": "manager", "user_id": manager.id}
+    )
+
+    return {
+        "message": "OTP verified successfully",
+        "access_token": access_token
+    }
 
 def login_user(db: Session, login_data: LoginRequest) -> Dict[str, Any]:
     """
