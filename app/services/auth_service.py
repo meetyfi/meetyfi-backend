@@ -99,7 +99,7 @@ def verify_manager_otp(db: Session, request: VerifyOTPRequest):
 
     :param db: Database session
     :param request: VerifyOTPRequest containing email and OTP
-    :return: VerifyOTPResponse with access token
+    :return: VerifyOTPResponse with access token and user data
     :raises: HTTPException if OTP is invalid
     """
     # Find the manager by email
@@ -129,9 +129,22 @@ def verify_manager_otp(db: Session, request: VerifyOTPRequest):
         data={"sub": manager.email, "user_type": "manager", "user_id": manager.id}
     )
 
+    # Prepare user data
+    user_data = {
+        "id": manager.id,
+        "email": manager.email,
+        "name": manager.name,
+        "user_type": "manager",
+        "is_verified": manager.is_verified,
+        "company_name": manager.company_name,
+        "company_size": manager.company_size,
+        # Add any other relevant fields from your Manager model
+    }
+
     return {
         "message": "OTP verified successfully",
-        "access_token": access_token
+        "access_token": access_token,
+        "user_data": user_data
     }
 
 def login_user(db: Session, login_data: LoginRequest) -> Dict[str, Any]:
