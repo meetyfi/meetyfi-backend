@@ -20,6 +20,11 @@ from app.exceptions import (
     OTPVerificationException, VerificationTokenException
 )
 
+def generate_random_id(length=8):
+    """Generate a random alphanumeric ID"""
+    characters = string.ascii_uppercase + string.digits
+    return ''.join(random.choice(characters) for _ in range(length))
+
 def generate_otp() -> str:
     """Generate a 6-digit OTP"""
     return ''.join(secrets.choice(string.digits) for _ in range(6))
@@ -40,16 +45,16 @@ def create_access_token(data: Dict[str, Any]) -> str:
     encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
     return encoded_jwt
 
-def register_manager(db: Session, manager_data: ManagerSignupRequest) -> int:
+def register_manager(db: Session, manager_data: ManagerSignupRequest):
     """
     Register a new manager
-    
+
     Args:
         db: Database session
         manager_data: Manager signup data
-        
+
     Returns:
-        int: ID of the created manager
+        dict: Contains manager_id and message
     """
     # Check if email already exists
     existing_manager = db.query(Manager).filter(Manager.email == manager_data.email).first()
@@ -58,11 +63,18 @@ def register_manager(db: Session, manager_data: ManagerSignupRequest) -> int:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Email already registered"
         )
-    
+
     # Create new manager
     hashed_password = hash_password(manager_data.password)
     otp = generate_otp()
-    
+
+    # Generate a random manager_id
+    random_manager_id = generate_random_id()
+
+    # Ensure the random ID is unique
+    while db.query(Manager).filter(Manager.manager_id == random_manager_id).first():
+        random_manager_id = generate_random_id()
+
     new_manager = Manager(
         email=manager_data.email,
         password=hashed_password,
@@ -71,21 +83,26 @@ def register_manager(db: Session, manager_data: ManagerSignupRequest) -> int:
         company_size=manager_data.company_size,
         phone=manager_data.phone,
         profile_picture=manager_data.profile_picture,
+        manager_id=random_manager_id,  # Add the random manager_id
         otp=otp,
         otp_created_at=datetime.utcnow(),
         is_verified=False,
         is_approved=False
     )
-    
+
     try:
         db.add(new_manager)
         db.commit()
         db.refresh(new_manager)
-        
+
         # Send OTP email
         send_otp_email(manager_data.email, otp, manager_data.name)
-        
-        return {"manager_id": new_manager.id, "message": "Manager registered successfully"}
+
+        return {
+            "manager_id": new_manager.id,  # Database ID
+            "custom_manager_id": random_manager_id,  # Random manager ID
+            "message": "Manager registered successfully"
+        }
     except IntegrityError:
         db.rollback()
         raise HTTPException(
