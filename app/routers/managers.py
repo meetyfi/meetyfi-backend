@@ -17,6 +17,11 @@ from app.services.manager_service import (
     
 )
 from app.dependencies import get_db, get_current_manager
+import logging
+
+
+logger = logging.getLogger(__name__)
+
 
 router = APIRouter()
 
@@ -44,8 +49,24 @@ async def create_employee(
     db: Session = Depends(get_db)
 ):
     """Add a new employee"""
-    employee_id = add_employee(db, current_manager.id, employee)
-    return {"message": "Employee added successfully", "employee_id": employee_id}
+    try:
+        employee_id = add_employee(db, current_manager.id, employee)
+        return {
+            "message": "Employee added successfully",
+            "employee_id": employee_id,
+            "email_sent": True
+        }
+    except Exception as e:
+        logger.error(f"Error creating employee: {str(e)}")
+        if "email" in str(e).lower():
+            # If it's an email-related error but employee was created
+            return {
+                "message": "Employee added successfully, but invitation email could not be sent",
+                "employee_id": employee_id,
+                "email_sent": False
+            }
+        # Re-raise other exceptions
+        raise
 
 @router.get("/employees", response_model=EmployeeListResponse)
 async def list_employees(
@@ -64,6 +85,7 @@ async def get_employee(
     db: Session = Depends(get_db)
 ):
     """Get specific employee details"""
+    # Note the order: db, manager_id, employee_id
     return get_employee_by_id(db, current_manager.id, employee_id)
 
 @router.delete("/employees/{employee_id}")

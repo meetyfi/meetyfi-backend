@@ -69,6 +69,7 @@ class Employee(Base):
     manager_id = Column(Integer, ForeignKey("managers.id"))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    token_expiry = Column(DateTime, nullable=True)
 
     manager = relationship("Manager", back_populates="employees")
     locations = relationship("Location", back_populates="employee")

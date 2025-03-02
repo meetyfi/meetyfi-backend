@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     SMTP_USERNAME: str
     SMTP_PASSWORD: str
     EMAIL_FROM: str
+    FRONTEND_URL: str = 'http://meetyfi.eplsio.com'
 
     class Config:
         # The env_file tells pydantic where to load environment variables from

@@ -10,8 +10,9 @@ from app.schemas.manager import (
 )
 from app.exceptions import UserNotFoundException, PermissionDeniedException
 from app.utils.email import (
-    send_meeting_notification, send_meeting_status_update
+    send_meeting_notification, send_meeting_status_update, send_employee_verification_email
 )
+from app.utils.security import generate_verification_token
 
 def get_manager_profile(db: Session, manager_id: int) -> Dict[str, Any]:
     """
@@ -284,42 +285,83 @@ def update_meeting_status(
             meeting.rejection_reason
         )
 
-def add_employee(manager_id: int, employee_data: dict, db: Session):
+from app.utils.email import send_employee_verification_email
+from app.utils.security import generate_verification_token
+from datetime import datetime, timedelta
+
+def add_employee(db: Session, manager_id: int, employee_data):
     """
     Add a new employee under a manager.
-    :param manager_id: ID of the manager
-    :param employee_data: Data for the new employee
-    :param db: Database session
-    :return: The created employee object
     """
+    logger.info(f"Adding employee with email {employee_data.email} for manager {manager_id}")
+
     # Check if an employee with the same email already exists
-    existing_employee = db.query(Employee).filter(Employee.email == employee_data["email"]).first()
+    existing_employee = db.query(Employee).filter(Employee.email == employee_data.email).first()
     if existing_employee:
+        logger.warning(f"Employee with email {employee_data.email} already exists")
         raise HTTPException(status_code=400, detail="Employee with this email already exists.")
 
+    # Get manager details for the email
+    manager = db.query(Manager).filter(Manager.id == manager_id).first()
+    if not manager:
+        logger.error(f"Manager with ID {manager_id} not found")
+        raise HTTPException(status_code=404, detail="Manager not found")
+
+    logger.info(f"Found manager: {manager.name}, company: {manager.company_name}")
+
+    # Generate verification token
+    verification_token = generate_verification_token()
+    token_expiry = datetime.utcnow() + timedelta(days=7)
+
+    logger.info(f"Generated verification token: {verification_token[:10]}... (expires: {token_expiry})")
+
     # Create a new employee
-    new_employee = Employee(
-        name=employee_data["name"],
-        email=employee_data["email"],
-        role=employee_data.get("role"),
-        department=employee_data.get("department"),
-        manager_id=manager_id,
-    )
-    db.add(new_employee)
-    db.commit()
-    db.refresh(new_employee)
+    try:
+        new_employee = Employee(
+            name=employee_data.name,
+            email=employee_data.email,
+            role=employee_data.role if hasattr(employee_data, 'role') else None,
+            department=employee_data.department if hasattr(employee_data, 'department') else None,
+            manager_id=manager_id,
+            verification_token=verification_token,
+            token_expiry=token_expiry,
+            is_verified=False
+        )
 
-    return new_employee
+        logger.info("Adding employee to database")
+        db.add(new_employee)
+        db.commit()
+        db.refresh(new_employee)
+        logger.info(f"Employee added with ID: {new_employee.id}")
 
-def get_employee_by_id(employee_id: int, manager_id: int, db: Session):
+        # Send invitation email
+        logger.info("Attempting to send verification email")
+        try:
+            email_sent = send_employee_verification_email(
+                email=employee_data.email,
+                manager_name=manager.name,
+                company_name=manager.company_name,
+                verification_token=verification_token
+            )
+
+            if email_sent:
+                logger.info(f"Verification email sent successfully to {employee_data.email}")
+            else:
+                logger.warning(f"Failed to send verification email to {employee_data.email}")
+        except Exception as e:
+            logger.error(f"Error sending verification email: {str(e)}")
+            # Continue even if email fails - we've already created the employee
+
+        return new_employee.id
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error creating employee: {str(e)}")
+        raise
+
+
+def get_employee_by_id(db: Session, manager_id: int, employee_id: int):
     """
     Get an employee by ID, ensuring they belong to the specified manager.
-
-    :param employee_id: ID of the employee to retrieve
-    :param manager_id: ID of the manager
-    :param db: Database session
-    :return: The employee object if found
-    :raises: CustomException if employee not found or doesn't belong to the manager
     """
     employee = db.query(Employee).filter(
         Employee.id == employee_id,
@@ -332,7 +374,18 @@ def get_employee_by_id(employee_id: int, manager_id: int, db: Session):
             detail="Employee not found or doesn't belong to this manager"
         )
 
-    return employee
+    # Return a dictionary instead of the SQLAlchemy model
+    return {
+        "id": employee.id,
+        "email": employee.email,
+        "name": employee.name,
+        "role": employee.role,
+        "department": employee.department,
+        "phone": employee.phone,
+        "profile_picture": employee.profile_picture,
+        "is_verified": employee.is_verified,
+        "created_at": employee.created_at
+    }
 
 def delete_employee(employee_id: int, manager_id: int, db: Session):
     """

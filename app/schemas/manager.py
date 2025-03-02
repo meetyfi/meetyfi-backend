@@ -46,6 +46,9 @@ class EmployeeResponse(BaseModel):
     is_verified: bool
     created_at: datetime
 
+    class Config:
+        from_attributes = True
+
 class EmployeeListResponse(BaseModel):
     employees: List[EmployeeResponse]
     total: int
