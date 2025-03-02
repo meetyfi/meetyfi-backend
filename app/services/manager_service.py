@@ -399,6 +399,7 @@ def add_employee(db: Session, manager_id: int, employee_data):
 def get_employee_by_id(db: Session, manager_id: int, employee_id: int):
     """
     Get an employee by ID, ensuring they belong to the specified manager.
+    Also includes the employee's latest location if available.
     """
     employee = db.query(Employee).filter(
         Employee.id == employee_id,
@@ -411,6 +412,21 @@ def get_employee_by_id(db: Session, manager_id: int, employee_id: int):
             detail="Employee not found or doesn't belong to this manager"
         )
 
+    # Get the latest location for this employee
+    latest_location = db.query(Location).filter(
+        Location.employee_id == employee_id
+    ).order_by(Location.timestamp.desc()).first()
+
+    # Prepare location data if available
+    location_data = None
+    if latest_location:
+        location_data = {
+            "latitude": latest_location.latitude,
+            "longitude": latest_location.longitude,
+            "address": latest_location.address,
+            "timestamp": latest_location.timestamp
+        }
+
     # Return a dictionary instead of the SQLAlchemy model
     return {
         "id": employee.id,
@@ -421,7 +437,8 @@ def get_employee_by_id(db: Session, manager_id: int, employee_id: int):
         "phone": employee.phone,
         "profile_picture": employee.profile_picture,
         "is_verified": employee.is_verified,
-        "created_at": employee.created_at
+        "created_at": employee.created_at,
+        "location": location_data  # Add the location data
     }
 
 def delete_employee(employee_id: int, manager_id: int, db: Session):
