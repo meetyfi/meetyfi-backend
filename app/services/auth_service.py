@@ -156,7 +156,7 @@ def verify_manager_otp(db: Session, request: VerifyOTPRequest):
         "is_verified": manager.is_verified,
         "company_name": manager.company_name,
         "company_size": manager.company_size,
-        # Add any other relevant fields from your Manager model
+        "manager_id" : manager.manager_id,
     }
 
     return {
@@ -231,7 +231,7 @@ def login_user(db: Session, login_data: LoginRequest) -> Dict[str, Any]:
         "user_data": user_data
     }
 
-def create_employee(db: Session, manager_id: int, name: str, email: str, role: Optional[str] = None, department: Optional[str] = None) -> int:
+def create_employee(db: Session, manager_id: str, name: str, email: str, role: Optional[str] = None, department: Optional[str] = None) -> int:
     """
     Create a new employee
     
