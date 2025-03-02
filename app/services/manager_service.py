@@ -78,7 +78,7 @@ def update_manager_profile(db: Session, manager_id: int, profile_data: ManagerPr
 
 def get_employees(db: Session, manager_id: int, page: int = 1, limit: int = 10, search: Optional[str] = None) -> Dict[str, Any]:
     """
-    Get employees for a manager
+    Get employees for a manager with their latest location
     
     Args:
         db: Database session
@@ -88,7 +88,7 @@ def get_employees(db: Session, manager_id: int, page: int = 1, limit: int = 10, 
         search: Search term for name or email
         
     Returns:
-        Dict: Employees with pagination info
+        Dict: Employees with pagination info and location data
     """
     query = db.query(Employee).filter(Employee.manager_id == manager_id)
     
@@ -108,6 +108,21 @@ def get_employees(db: Session, manager_id: int, page: int = 1, limit: int = 10, 
     
     employee_list = []
     for employee in employees:
+        # Get the latest location for this employee
+        latest_location = db.query(Location).filter(
+            Location.employee_id == employee.id
+        ).order_by(Location.timestamp.desc()).first()
+        
+        # Create location dictionary if location exists
+        location_data = None
+        if latest_location:
+            location_data = {
+                "latitude": latest_location.latitude,
+                "longitude": latest_location.longitude,
+                "address": latest_location.address,
+                "timestamp": latest_location.timestamp
+            }
+        
         employee_dict = {
             "id": employee.id,
             "email": employee.email,
@@ -117,7 +132,8 @@ def get_employees(db: Session, manager_id: int, page: int = 1, limit: int = 10, 
             "phone": employee.phone,
             "profile_picture": employee.profile_picture,
             "is_verified": employee.is_verified,
-            "created_at": employee.created_at
+            "created_at": employee.created_at,
+            "location": location_data  # Add the location data
         }
         employee_list.append(employee_dict)
     
