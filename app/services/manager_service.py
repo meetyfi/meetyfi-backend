@@ -106,21 +106,45 @@ def get_employees(db: Session, manager_id: int, page: int = 1, limit: int = 10, 
     total = query.count()
     employees = query.order_by(Employee.created_at.desc()).offset((page - 1) * limit).limit(limit).all()
     
+    # Get all employee IDs for the current page
+    employee_ids = [employee.id for employee in employees]
+    
+    # Fetch the latest location for each employee in a single query
+    from sqlalchemy import func, and_
+    
+    # Subquery to get the latest location timestamp for each employee
+    latest_timestamps = db.query(
+        Location.employee_id,
+        func.max(Location.timestamp).label('max_timestamp')
+    ).filter(
+        Location.employee_id.in_(employee_ids)
+    ).group_by(Location.employee_id).subquery()
+    
+    # Join with locations to get the full location data
+    latest_locations = db.query(
+        Location
+    ).join(
+        latest_timestamps,
+        and_(
+            Location.employee_id == latest_timestamps.c.employee_id,
+            Location.timestamp == latest_timestamps.c.max_timestamp
+        )
+    ).all()
+    
+    # Create a dictionary for quick lookup
+    location_map = {loc.employee_id: loc for loc in latest_locations}
+    
     employee_list = []
     for employee in employees:
-        # Get the latest location for this employee
-        latest_location = db.query(Location).filter(
-            Location.employee_id == employee.id
-        ).order_by(Location.timestamp.desc()).first()
-        
-        # Create location dictionary if location exists
+        # Get location data if available
         location_data = None
-        if latest_location:
+        if employee.id in location_map:
+            loc = location_map[employee.id]
             location_data = {
-                "latitude": latest_location.latitude,
-                "longitude": latest_location.longitude,
-                "address": latest_location.address,
-                "timestamp": latest_location.timestamp
+                "latitude": loc.latitude,
+                "longitude": loc.longitude,
+                "address": loc.address,
+                "timestamp": loc.timestamp
             }
         
         employee_dict = {

@@ -35,6 +35,15 @@ class EmployeeCreateRequest(BaseModel):
     role: Optional[str] = None
     department: Optional[str] = None
 
+class LocationData(BaseModel):
+    latitude: float
+    longitude: float
+    address: str
+    timestamp: datetime
+
+    class Config:
+        from_attributes = True
+
 class EmployeeResponse(BaseModel):
     id: int
     email: str
@@ -45,6 +54,7 @@ class EmployeeResponse(BaseModel):
     profile_picture: Optional[str] = None
     is_verified: bool
     created_at: datetime
+    location: Optional[LocationData] = None  # Add this field
 
     class Config:
         from_attributes = True
