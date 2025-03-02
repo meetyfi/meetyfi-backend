@@ -79,19 +79,19 @@ def update_manager_profile(db: Session, manager_id: int, profile_data: ManagerPr
 def get_employees(db: Session, manager_id: int, page: int = 1, limit: int = 10, search: Optional[str] = None) -> Dict[str, Any]:
     """
     Get employees for a manager with their latest location
-    
+
     Args:
         db: Database session
         manager_id: ID of the manager
         page: Page number
         limit: Items per page
         search: Search term for name or email
-        
+
     Returns:
         Dict: Employees with pagination info and location data
     """
     query = db.query(Employee).filter(Employee.manager_id == manager_id)
-    
+
     if search:
         search_term = f"%{search}%"
         query = query.filter(
@@ -102,38 +102,31 @@ def get_employees(db: Session, manager_id: int, page: int = 1, limit: int = 10, 
                 Employee.department.ilike(search_term)
             )
         )
-    
+
     total = query.count()
     employees = query.order_by(Employee.created_at.desc()).offset((page - 1) * limit).limit(limit).all()
-    
+
     # Get all employee IDs for the current page
     employee_ids = [employee.id for employee in employees]
     
-    # Fetch the latest location for each employee in a single query
-    from sqlalchemy import func, and_
-    
-    # Subquery to get the latest location timestamp for each employee
-    latest_timestamps = db.query(
-        Location.employee_id,
-        func.max(Location.timestamp).label('max_timestamp')
-    ).filter(
-        Location.employee_id.in_(employee_ids)
-    ).group_by(Location.employee_id).subquery()
-    
-    # Join with locations to get the full location data
-    latest_locations = db.query(
-        Location
-    ).join(
-        latest_timestamps,
-        and_(
-            Location.employee_id == latest_timestamps.c.employee_id,
-            Location.timestamp == latest_timestamps.c.max_timestamp
-        )
-    ).all()
-    
-    # Create a dictionary for quick lookup
-    location_map = {loc.employee_id: loc for loc in latest_locations}
-    
+    # Add debug logging
+    logger.info(f"Fetching locations for employee IDs: {employee_ids}")
+
+    # Create a dictionary to store the latest location for each employee
+    location_map = {}
+
+    # Directly query the latest location for each employee
+    for employee_id in employee_ids:
+        latest_location = db.query(Location).filter(
+            Location.employee_id == employee_id
+        ).order_by(Location.timestamp.desc()).first()
+
+        if latest_location:
+            logger.info(f"Found location for employee {employee_id}: {latest_location.latitude}, {latest_location.longitude}")
+            location_map[employee_id] = latest_location
+        else:
+            logger.info(f"No location found for employee {employee_id}")
+
     employee_list = []
     for employee in employees:
         # Get location data if available
@@ -146,7 +139,7 @@ def get_employees(db: Session, manager_id: int, page: int = 1, limit: int = 10, 
                 "address": loc.address,
                 "timestamp": loc.timestamp
             }
-        
+
         employee_dict = {
             "id": employee.id,
             "email": employee.email,
@@ -160,7 +153,7 @@ def get_employees(db: Session, manager_id: int, page: int = 1, limit: int = 10, 
             "location": location_data  # Add the location data
         }
         employee_list.append(employee_dict)
-    
+
     return {
         "employees": employee_list,
         "total": total,
