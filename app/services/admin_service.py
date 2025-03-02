@@ -9,11 +9,25 @@ from app.schemas.admin import ManagerRequestItem
 from app.utils.email import send_manager_approval_email, send_manager_rejection_email
 
 def get_manager_requests(db: Session, status: Optional[str] = None, skip: int = 0, limit: int = 100):
+    """
+    Get manager signup requests with optional verification status filtering and pagination.
+
+    :param db: Database session
+    :param status: Optional verification status filter ("verified" or "unverified")
+    :param skip: Number of records to skip (for pagination)
+    :param limit: Maximum number of records to return
+    :return: Dictionary with requests, total count, page, and limit
+    """
+    # Start with base query for unapproved managers
     query = db.query(Manager).filter(Manager.is_approved == False)
-    
-    # Apply status filter if provided
-    if status:
-        query = query.filter(Manager.status == status)  # Assuming `status` is a field on Manager model
+
+    # Apply verification status filter if provided and not a placeholder
+    if status and status not in ["<string>", "string"]:
+        if status.lower() == "verified":
+            query = query.filter(Manager.is_verified == True)
+        elif status.lower() == "unverified":
+            query = query.filter(Manager.is_verified == False)
+        # Ignore invalid status values
 
     # Get the total count of the requests
     total = query.count()
@@ -22,9 +36,20 @@ def get_manager_requests(db: Session, status: Optional[str] = None, skip: int = 
     managers = query.offset(skip).limit(limit).all()
 
     # Convert Manager objects to ManagerRequestItem Pydantic models
-    manager_requests = [
-        ManagerRequestItem.from_orm(manager) for manager in managers
-    ]
+    manager_requests = []
+    for manager in managers:
+        # Create a dictionary with the required fields
+        manager_dict = {
+            "id": manager.id,
+            "email": manager.email,
+            "name": manager.name,
+            "company_name": manager.company_name,
+            "company_size": manager.company_size,
+            "phone": manager.phone,
+            "is_verified": manager.is_verified,
+            "created_at": manager.created_at
+        }
+        manager_requests.append(manager_dict)
 
     # Return the result in the structure that matches ManagerRequestListResponse
     return {
