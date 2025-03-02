@@ -100,7 +100,7 @@ def verify_manager_otp(db: Session, request: VerifyOTPRequest):
     :param db: Database session
     :param request: VerifyOTPRequest containing email and OTP
     :return: VerifyOTPResponse with access token
-    :raises: HTTPException if OTP is invalid or expired
+    :raises: HTTPException if OTP is invalid
     """
     # Find the manager by email
     manager = db.query(Manager).filter(Manager.email == request.email).first()
@@ -115,19 +115,6 @@ def verify_manager_otp(db: Session, request: VerifyOTPRequest):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid OTP"
-        )
-
-    # Check if OTP is expired
-    otp_expiry = manager.otp_expiry
-
-    # Convert date to datetime if needed
-    if isinstance(otp_expiry, date) and not isinstance(otp_expiry, datetime):
-        # Convert date to datetime by setting time to midnight
-        otp_expiry = datetime.combine(otp_expiry, time.min)
-
-            raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="OTP expired"
         )
 
     # Mark manager as verified
