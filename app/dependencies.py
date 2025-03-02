@@ -1,30 +1,30 @@
-from fastapi import Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
+from fastapi import Depends, HTTPException, status, Header
 from sqlalchemy.orm import Session
-from jose import JWTError, jwt
-from datetime import datetime, timedelta
-from typing import Optional
-
+from jose import JWTError
 from app.database import Manager, Employee, Admin, UserType
 from app.config import settings
 from app.utils.security import verify_token
 from app.data import get_db_session
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
-
 def get_db():
-    db = get_db_session()
+    db = get_db_session()  # Ensure this function returns a Session object, not a generator
     try:
-        yield db
+        return db
     finally:
         db.close()
 
-async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+async def get_current_user(authorization: str = Header(...), db: Session = Depends(get_db)):
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
+
+    # Extracting the token from the Authorization header (Bearer <token>)
+    try:
+        token = authorization.split(" ")[1]  # assuming format is "Bearer <token>"
+    except IndexError:
+        raise credentials_exception
 
     try:
         payload = verify_token(token)

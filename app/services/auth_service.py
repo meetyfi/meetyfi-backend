@@ -157,7 +157,12 @@ def login_user(db: Session, login_data: LoginRequest) -> Dict[str, Any]:
     if not verify_password(login_data.password, user.password):
         raise CredentialsException("Invalid credentials")
     
-    if not user.is_verified:
+    # For admins, they're always considered verified
+    if login_data.user_type == UserType.ADMIN:
+        user.is_verified = True
+    
+    # Ensure the user is verified (except for admins, as they are always verified)
+    if login_data.user_type != UserType.ADMIN and not user.is_verified:
         raise CredentialsException("Account not verified")
     
     # For managers, check if approved
@@ -166,7 +171,7 @@ def login_user(db: Session, login_data: LoginRequest) -> Dict[str, Any]:
     
     # Generate access token
     access_token = create_access_token({
-        "sub": user.id,
+        "sub": str(user.id),
         "type": login_data.user_type
     })
     

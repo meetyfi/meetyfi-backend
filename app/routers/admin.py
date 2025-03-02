@@ -23,7 +23,8 @@ async def list_manager_requests(
     db: Session = Depends(get_db)
 ):
     """Get all manager signup requests"""
-    return get_manager_requests(db, status, page, limit)
+    skip = (page - 1) * limit  # Adjust skip for pagination
+    return get_manager_requests(db, status, skip, limit)
 
 @router.put("/managers/{manager_id}/status")
 async def update_manager_request(

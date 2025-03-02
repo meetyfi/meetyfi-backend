@@ -17,6 +17,10 @@ class ManagerRequestItem(BaseModel):
     is_verified: bool
     created_at: datetime
 
+    class Config:
+        orm_mode = True
+        from_attributes = True 
+
 class ManagerRequestListResponse(BaseModel):
     requests: List[ManagerRequestItem]
     total: int

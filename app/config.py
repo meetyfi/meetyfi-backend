@@ -1,4 +1,4 @@
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings  # Use pydantic_settings instead of pydantic
 import os
 from dotenv import load_dotenv
 
@@ -7,22 +7,27 @@ load_dotenv()
 
 class Settings(BaseSettings):
     # Database Configuration
-    DATABASE_URL: str = os.getenv("DATABASE_URL")
+    DATABASE_URL: str
 
     # JWT Authentication
-    SECRET_KEY: str = os.getenv("SECRET_KEY")
-    ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440
+    SECRET_KEY: str
+    ALGORITHM: str = "HS256"  # Default value for algorithm
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440  # Default value of 24 hours
 
     # Email Configuration (Hostinger SMTP)
-    SMTP_SERVER: str = os.getenv("SMTP_SERVER")
-    SMTP_PORT: int = int(os.getenv("SMTP_PORT"))
-    SMTP_USERNAME: str = os.getenv("SMTP_USERNAME")
-    SMTP_PASSWORD: str = os.getenv("SMTP_PASSWORD")
-    EMAIL_FROM: str = os.getenv("EMAIL_FROM")
+    SMTP_SERVER: str
+    SMTP_PORT: int
+    SMTP_USERNAME: str
+    SMTP_PASSWORD: str
+    EMAIL_FROM: str
 
     class Config:
+        # The env_file tells pydantic where to load environment variables from
         env_file = ".env"
 
 # Instantiate the settings object
 settings = Settings()
+
+# Optional: You can add custom validations for the environment variables if needed
+if not settings.SECRET_KEY:
+    raise ValueError("SECRET_KEY environment variable is required")

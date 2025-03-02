@@ -18,8 +18,8 @@ def create_tables():
 
 # Function to get a database session
 def get_db_session():
-    db = SessionLocal()
+    db = SessionLocal()  # Create a new session
     try:
-        yield db
+        return db  # Return the session object
     finally:
-        db.close()
+        db.close()  # Close the session after use

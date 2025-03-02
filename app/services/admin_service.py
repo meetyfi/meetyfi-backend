@@ -5,38 +5,92 @@ from datetime import datetime, timedelta
 
 from app.database import Manager, Employee, Meeting, MeetingStatus
 from app.exceptions import CustomException
+from app.schemas.admin import ManagerRequestItem 
 from app.utils.email import send_manager_approval_email, send_manager_rejection_email
 
-def get_manager_requests(db: Session, skip: int = 0, limit: int = 100):
-    """
-    Get all pending manager signup requests.
+def get_manager_requests(db: Session, status: Optional[str] = None, skip: int = 0, limit: int = 100):
+    query = db.query(Manager).filter(Manager.is_approved == False)
+    
+    # Apply status filter if provided
+    if status:
+        query = query.filter(Manager.status == status)  # Assuming `status` is a field on Manager model
 
-    :param db: Database session
-    :param skip: Number of records to skip (for pagination)
-    :param limit: Maximum number of records to return
-    :return: List of pending manager requests
-    """
-    return db.query(Manager).filter(Manager.is_approved == False).offset(skip).limit(limit).all()
+    # Get the total count of the requests
+    total = query.count()
 
-def get_all_managers(db: Session, skip: int = 0, limit: int = 100):
+    # Get the list of manager requests (with pagination)
+    managers = query.offset(skip).limit(limit).all()
+
+    # Convert Manager objects to ManagerRequestItem Pydantic models
+    manager_requests = [
+        ManagerRequestItem.from_orm(manager) for manager in managers
+    ]
+
+    # Return the result in the structure that matches ManagerRequestListResponse
+    return {
+        "requests": manager_requests,
+        "total": total,
+        "page": (skip // limit) + 1,  # Calculate page based on skip/limit
+        "limit": limit
+    }
+
+
+def get_all_managers(db: Session, page: int = 1, limit: int = 10):
     """
     Get all approved managers with pagination.
 
     :param db: Database session
-    :param skip: Number of records to skip (for pagination)
-    :param limit: Maximum number of records to return
-    :return: List of approved managers
+    :param page: Page number (starting from 1)
+    :param limit: Maximum number of records per page
+    :return: Dictionary with managers, total count, page, and limit
     """
-    return db.query(Manager).filter(Manager.is_approved == True).offset(skip).limit(limit).all()
+    skip = (page - 1) * limit
+    
+    # Query for approved managers
+    query = db.query(Manager).filter(Manager.is_approved == True)
+    
+    # Get total count
+    total = query.count()
+    
+    # Get managers with pagination
+    managers = query.offset(skip).limit(limit).all()
+    
+    # Count employees for each manager
+    manager_items = []
+    for manager in managers:
+        employee_count = db.query(func.count(Employee.id)).filter(
+            Employee.manager_id == manager.id
+        ).scalar()
+        
+        manager_item = {
+            "id": manager.id,
+            "email": manager.email,
+            "name": manager.name,
+            "company_name": manager.company_name,
+            "company_size": manager.company_size,
+            "phone": manager.phone,
+            "profile_picture": manager.profile_picture,
+            "is_verified": manager.is_verified,
+            "is_approved": manager.is_approved,
+            "created_at": manager.created_at,
+            "employee_count": employee_count
+        }
+        manager_items.append(manager_item)
+    
+    return {
+        "managers": manager_items,
+        "total": total,
+        "page": page,
+        "limit": limit
+    }
 
-def update_manager_status(manager_id: int, is_approved: bool, rejection_reason: Optional[str], db: Session):
+def update_manager_status(db: Session, manager_id: int, status_update):
     """
     Update a manager's approval status.
 
-    :param manager_id: ID of the manager
-    :param is_approved: Whether to approve the manager
-    :param rejection_reason: Reason for rejection (if not approved)
     :param db: Database session
+    :param manager_id: ID of the manager
+    :param status_update: ManagerStatusUpdateRequest object
     :return: Updated manager object
     :raises: CustomException if manager not found
     """
@@ -44,9 +98,11 @@ def update_manager_status(manager_id: int, is_approved: bool, rejection_reason: 
     if not manager:
         raise CustomException(status_code=404, detail="Manager not found")
 
+    is_approved = status_update.status == "approved"
     manager.is_approved = is_approved
-    if not is_approved and rejection_reason:
-        manager.rejection_reason = rejection_reason
+
+    if not is_approved and status_update.reason:
+        manager.rejection_reason = status_update.reason
 
     db.commit()
     db.refresh(manager)
@@ -55,7 +111,7 @@ def update_manager_status(manager_id: int, is_approved: bool, rejection_reason: 
     if is_approved:
         send_manager_approval_email(manager.email, manager.name)
     else:
-        send_manager_rejection_email(manager.email, manager.name, rejection_reason)
+        send_manager_rejection_email(manager.email, manager.name, status_update.reason)
 
     return manager
 

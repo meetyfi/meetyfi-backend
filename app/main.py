@@ -47,6 +47,7 @@ def create_default_admin():
 @app.on_event("startup")
 def startup_event():
     create_default_admin()
+    
 
 @app.get("/")
 async def root():
