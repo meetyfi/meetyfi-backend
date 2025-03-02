@@ -1,7 +1,7 @@
 from fastapi import HTTPException, status, Depends
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date, time
 import jwt
 import secrets
 import string
@@ -92,8 +92,6 @@ def register_manager(db: Session, manager_data: ManagerSignupRequest) -> int:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Error creating manager account"
         )
-
-from datetime import datetime, date, time
 
 def verify_manager_otp(db: Session, request: VerifyOTPRequest):
     """
