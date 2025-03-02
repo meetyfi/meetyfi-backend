@@ -13,6 +13,10 @@ from app.utils.email import (
     send_meeting_notification, send_meeting_status_update, send_employee_verification_email
 )
 from app.utils.security import generate_verification_token
+import logging
+
+
+logger = logging.getLogger(__name__)
 
 def get_manager_profile(db: Session, manager_id: int) -> Dict[str, Any]:
     """

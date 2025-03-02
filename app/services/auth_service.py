@@ -294,38 +294,72 @@ def create_employee(db: Session, manager_id: str, name: str, email: str, role: O
             detail="Error creating employee account"
         )
 
-def verify_employee(db: Session, verify_data: EmployeeVerifyRequest) -> str:
+def verify_employee(db: Session, verify_data: EmployeeVerifyRequest) -> Dict[str, Any]:
     """
     Verify employee account with verification token and set password
-    
+
     Args:
         db: Database session
         verify_data: Employee verification data
-        
+
     Returns:
-        str: Access token
+        Dict: Contains access token and user data
     """
-    employee = db.query(Employee).filter(Employee.verification_token == verify_data.verification_token).first()
-    if not employee:
-        raise VerificationTokenException("Invalid verification token")
-    
-    # Check if token is expired (24 hours validity)
-    token_expiry = employee.verification_token_created_at + timedelta(hours=24)
-    if datetime.utcnow() > token_expiry:
-        raise VerificationTokenException("Verification token expired")
-    
-    # Set password and mark as verified
-    hashed_password = hash_password(verify_data.password)
-    employee.password = hashed_password
-    employee.is_verified = True
-    employee.verification_token = None
-    employee.verification_token_created_at = None
-    db.commit()
-    
-    # Generate access token
-    access_token = create_access_token({
-        "sub": employee.id,
-        "type": UserType.EMPLOYEE.value
-    })
-    
-    return access_token
+    try:
+        # Find employee by verification token
+        employee = db.query(Employee).filter(Employee.verification_token == verify_data.verification_token).first()
+
+        if not employee:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Invalid verification token"
+            )
+
+        # Check if token is expired
+        if employee.token_expiry and employee.token_expiry < datetime.utcnow():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Verification token expired"
+            )
+
+        # Set password and mark as verified
+        hashed_password = hash_password(verify_data.password)
+        employee.password = hashed_password
+        employee.is_verified = True
+        employee.verification_token = None
+        employee.token_expiry = None
+
+        db.commit()
+
+        # Generate access token
+        access_token = create_access_token({
+            "sub": str(employee.id),
+            "type": UserType.EMPLOYEE.value
+        })
+
+        # Prepare user data
+        user_data = {
+            "id": employee.id,
+            "email": employee.email,
+            "name": employee.name,
+            "user_type": UserType.EMPLOYEE.value,
+            "is_verified": True,
+            "role": employee.role,
+            "department": employee.department,
+            "manager_id": employee.manager_id
+        }
+
+        return {
+            "access_token": access_token,
+            "user_data": user_data,
+            "message": "Account verified successfully"
+        }
+
+    except Exception as e:
+        db.rollback()
+        # Log the specific error for debugging
+        print(f"Error in verify_employee: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error verifying employee: {str(e)}"
+        )
