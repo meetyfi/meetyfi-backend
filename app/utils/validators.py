@@ -1,5 +1,5 @@
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional, Dict, Any
 import phonenumbers
 
@@ -22,6 +22,39 @@ def validate_email(email: str) -> bool:
     if not re.match(email_pattern, email):
         raise ValidationException("Invalid email format")
     return True
+
+class MeetingStatusTransitionValidator:
+    @staticmethod
+    def validate(current_status: str, new_status: str) -> bool:
+        """
+        Validate if a status transition is allowed
+        
+        Args:
+            current_status: Current meeting status
+            new_status: New meeting status
+            
+        Returns:
+            True if transition is valid, raises exception otherwise
+        """
+        # Define allowed transitions
+        allowed_transitions = {
+            "pending": ["accepted", "rejected", "cancelled"],
+            "accepted": ["cancelled"],
+            "rejected": [],  # No transitions allowed from rejected
+            "cancelled": []  # No transitions allowed from cancelled
+        }
+        
+        # Convert to lowercase for comparison
+        current = current_status.lower()
+        new = new_status.lower()
+        
+        if current not in allowed_transitions:
+            raise ValueError(f"Invalid current status: {current}")
+            
+        if new not in allowed_transitions[current]:
+            raise ValueError(f"Cannot transition from {current} to {new}")
+            
+        return True
 
 def validate_password(password: str) -> bool:
     """
@@ -113,35 +146,33 @@ def validate_meeting_dates(
     
     return True
 
-def validate_proposed_dates(proposed_dates: List[datetime]) -> bool:
+def validate_proposed_dates(dates):
     """
     Validate proposed meeting dates
     
     Args:
-        proposed_dates: List of proposed meeting dates
+        dates: List of proposed dates
         
     Returns:
-        bool: True if proposed dates are valid, False otherwise
-        
-    Raises:
-        ValidationException: If proposed dates are invalid
+        List: Validated dates
     """
-    now = datetime.now()
+    # Get current time in UTC with timezone info
+    now = datetime.now(timezone.utc)
     
-    if not proposed_dates:
-        raise ValidationException("At least one proposed date is required")
-    
-    if len(proposed_dates) > 5:
-        raise ValidationException("Maximum 5 proposed dates are allowed")
-    
-    for date in proposed_dates:
+    # Ensure all dates are in the future
+    for date in dates:
+        # If date is naive (no timezone), assume it's UTC
+        if date.tzinfo is None:
+            date = date.replace(tzinfo=timezone.utc)
+            
         if date < now:
-            raise ValidationException("Proposed dates cannot be in the past")
-        
-        if date > now + timedelta(days=90):
-            raise ValidationException("Proposed dates cannot be more than 90 days in advance")
+            raise ValueError("Proposed dates must be in the future")
     
-    return True
+    # Check for duplicate dates
+    if len(dates) != len(set(dates)):
+        raise ValueError("Duplicate dates are not allowed")
+    
+    return dates
 
 def validate_meeting_status_transition(current_status: str, new_status: str) -> bool:
     """

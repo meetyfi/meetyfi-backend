@@ -2,7 +2,7 @@ from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_, func
 from typing import Dict, List, Any, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date, timezone, time
 
 from app.database import Employee, Manager, Meeting, Location, MeetingStatus, ProposedDate
 from app.schemas.employee import (
@@ -51,81 +51,60 @@ def get_employee_profile(db: Session, employee_id: int) -> Dict[str, Any]:
     }
 
 
-def get_manager_availability(manager_id: int, start_date: datetime, end_date: datetime, db: Session):
+def get_manager_availability(db: Session, manager_id: int, date_param: date, time_param: time) -> dict:
     """
-    Get a manager's availability within a specified date range.
+    Check if a manager is available at a specific date and time
 
-    :param manager_id: ID of the manager
-    :param start_date: Start date for the availability check
-    :param end_date: End date for the availability check
-    :param db: Database session
-    :return: List of time slots when the manager is available
+    Args:
+        db: Database session
+        manager_id: ID of the manager
+        date_param: Date to check availability
+        time_param: Time to check availability
+
+    Returns:
+        dict: Manager's availability status for the specific date and time
     """
-    # Get all meetings for the manager within the date range
+    # Check if manager exists
+    manager = db.query(Manager).filter(Manager.id == manager_id).first()
+    if not manager:
+        raise UserNotFoundException("Manager not found")
+
+    # Round time to nearest 30-minute slot
+    minutes = time_param.minute
+    if minutes < 30:
+        rounded_minutes = 0
+    else:
+        rounded_minutes = 30
+
+    slot_time = datetime.combine(date_param, time(hour=time_param.hour, minute=rounded_minutes))
+    next_slot = slot_time + timedelta(minutes=30)
+
+    # Get meetings that might overlap with this time slot
     meetings = db.query(Meeting).filter(
         Meeting.manager_id == manager_id,
-        Meeting.date >= start_date,
-        Meeting.date <= end_date,
-        Meeting.status.in_([MeetingStatus.APPROVED, MeetingStatus.PENDING])
+        Meeting.status.in_(["accepted", "pending"]),
+        Meeting.date <= next_slot,
+        Meeting.date + timedelta(minutes=Meeting.duration) >= slot_time
     ).all()
 
-    # Create a list of busy time slots based on meetings
-    busy_slots = []
+    # Check if this specific time slot overlaps with any meeting
+    is_available = True
     for meeting in meetings:
         meeting_start = meeting.date
         meeting_end = meeting_start + timedelta(minutes=meeting.duration)
-        busy_slots.append({
-            "start": meeting_start,
-            "end": meeting_end,
-            "title": meeting.title
-        })
 
-    # Define working hours (e.g., 9 AM to 5 PM)
-    working_start_hour = 9
-    working_end_hour = 17
+        if (slot_time >= meeting_start and slot_time < meeting_end) or \
+           (next_slot > meeting_start and next_slot <= meeting_end) or \
+           (slot_time <= meeting_start and next_slot >= meeting_end):
+            is_available = False
+            break
 
-    # Generate available time slots
-    available_slots = []
-    current_date = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
-    end_date = end_date.replace(hour=23, minute=59, second=59)
-
-    while current_date <= end_date:
-        # Skip weekends (assuming Monday=0, Sunday=6)
-        if current_date.weekday() >= 5:  # Saturday or Sunday
-            current_date += timedelta(days=1)
-            continue
-
-        # Start from working hours
-        day_start = current_date.replace(hour=working_start_hour, minute=0)
-        day_end = current_date.replace(hour=working_end_hour, minute=0)
-
-        # Check availability in 30-minute increments
-        slot_start = day_start
-        while slot_start < day_end:
-            slot_end = slot_start + timedelta(minutes=30)
-            
-            # Check if this slot overlaps with any busy slot
-            is_available = True
-            for busy in busy_slots:
-                if (slot_start < busy["end"] and slot_end > busy["start"]):
-                    is_available = False
-                    break
-            
-            if is_available:
-                available_slots.append({
-                    "start": slot_start,
-                    "end": slot_end
-                })
-            
-            slot_start = slot_end
-        
-        # Move to next day
-        current_date += timedelta(days=1)
-
+    # Return simple availability status
     return {
-        "manager_id": manager_id,
-        "available_slots": available_slots,
-        "busy_slots": busy_slots
+        "date": date_param.isoformat(),
+        "time": time_param.strftime("%H:%M"),
+        "status": "available" if is_available else "unavailable",
+        "available_slots": {}  # Empty dict to satisfy the response model
     }
 
     
@@ -225,80 +204,92 @@ def post_location(db: Session, employee_id: int, location_data: LocationCreateRe
 
 def request_meeting(db: Session, employee_id: int, meeting_data: MeetingRequestCreate) -> int:
     """
-    Request a meeting with the manager
-    
+    Request a meeting with the manager and a client
+
     Args:
         db: Database session
         employee_id: ID of the employee
         meeting_data: Meeting request data
-        
+
     Returns:
         int: ID of the created meeting
     """
     employee = db.query(Employee).filter(Employee.id == employee_id).first()
     if not employee:
-        raise NotFoundException("Employee not found")
-    
-    # Create new meeting
+        raise UserNotFoundException("Employee not found")
+
+    # Get manager details
+    manager = db.query(Manager).filter(Manager.id == employee.manager_id).first()
+    if not manager:
+        raise UserNotFoundException("Manager not found")
+
+    # Create new meeting with client info
     new_meeting = Meeting(
         title=meeting_data.title,
         description=meeting_data.description,
         duration=meeting_data.duration,
         location=meeting_data.location,
-        status=MeetingStatus.PENDING,
+        status="pending",
         created_by_id=employee_id,
         created_by_type="employee",
-        manager_id=employee.manager_id
+        manager_id=employee.manager_id,
+        client_name=meeting_data.client_info.name,
+        client_email=meeting_data.client_info.email,
+        client_phone=meeting_data.client_info.phone
     )
-    
+
     db.add(new_meeting)
     db.commit()
     db.refresh(new_meeting)
-    
+
     # Add proposed dates
-    for date in meeting_data.proposed_dates:
+    for date_obj in meeting_data.proposed_dates:
         proposed_date = ProposedDate(
             meeting_id=new_meeting.id,
-            date=date,
-            is_selected=False
+            date=date_obj,
+            proposed_by_id=employee_id,
+            proposed_by_type="employee",
+            status="pending"  # Use string instead of enum
         )
         db.add(proposed_date)
-    
+
     db.commit()
-    
-    # Get manager details
-    manager = db.query(Manager).filter(Manager.id == employee.manager_id).first()
-    
-    # Send notification to manager
-    send_meeting_notification(
-        manager.email,
-        manager.name,
-        employee.name,
-        new_meeting.title,
-        meeting_data.proposed_dates,
-        new_meeting.id
-    )
+
+    # Since we need to pass a single datetime to send_meeting_notification,
+    # use the first proposed date for the notification
+    if meeting_data.proposed_dates and len(meeting_data.proposed_dates) > 0:
+        first_date = meeting_data.proposed_dates[0]
+        
+        # Send notification to manager
+        send_meeting_notification(
+            manager.email,                # email
+            meeting_data.title,           # meeting_title
+            first_date,                   # meeting_date (using first proposed date)
+            meeting_data.location,        # meeting_location
+            f"{employee.name}",           # created_by
+            True                          # is_request
+        )
     
     return new_meeting.id
 
 def get_employee_meetings(db: Session, employee_id: int, page: int = 1, limit: int = 10, status: Optional[str] = None) -> Dict[str, Any]:
     """
     Get meetings for an employee
-    
+
     Args:
         db: Database session
         employee_id: ID of the employee
         page: Page number
         limit: Items per page
         status: Filter by meeting status
-        
+
     Returns:
         Dict: Meetings with pagination info
     """
     employee = db.query(Employee).filter(Employee.id == employee_id).first()
     if not employee:
         raise NotFoundException("Employee not found")
-    
+
     # Base query for meetings where employee is involved
     query = db.query(Meeting).filter(
         or_(
@@ -309,23 +300,23 @@ def get_employee_meetings(db: Session, employee_id: int, page: int = 1, limit: i
             Meeting.employees.any(id=employee_id)
         )
     )
-    
+
     # Apply status filter if provided
     if status:
         query = query.filter(Meeting.status == status)
-    
+
     # Get total count
     total = query.count()
-    
+
     # Get paginated results
     meetings = query.order_by(Meeting.created_at.desc()).offset((page - 1) * limit).limit(limit).all()
-    
+
     # Format response
     meeting_list = []
     for meeting in meetings:
         # Get manager details
         manager = db.query(Manager).filter(Manager.id == meeting.manager_id).first()
-        
+
         # Get proposed dates if this is an employee-created meeting
         proposed_dates = []
         if meeting.created_by_type == "employee" and meeting.created_by_id == employee_id:
@@ -337,7 +328,14 @@ def get_employee_meetings(db: Session, employee_id: int, page: int = 1, limit: i
                 }
                 for date in date_records
             ]
-        
+
+        # Include client information
+        client_info = {
+            "name": meeting.client_name,
+            "email": meeting.client_email,
+            "phone": meeting.client_phone
+        }
+
         meeting_dict = {
             "id": meeting.id,
             "title": meeting.title,
@@ -349,6 +347,7 @@ def get_employee_meetings(db: Session, employee_id: int, page: int = 1, limit: i
             "rejection_reason": meeting.rejection_reason,
             "created_by_type": meeting.created_by_type,
             "created_at": meeting.created_at,
+            "client_info": client_info,
             "manager": {
                 "id": manager.id,
                 "name": manager.name,
@@ -357,18 +356,19 @@ def get_employee_meetings(db: Session, employee_id: int, page: int = 1, limit: i
                 "profile_picture": manager.profile_picture
             }
         }
-        
+
         if proposed_dates:
             meeting_dict["proposed_dates"] = proposed_dates
-        
+
         meeting_list.append(meeting_dict)
-    
+
     return {
         "meetings": meeting_list,
         "total": total,
         "page": page,
         "limit": limit
     }
+
 
 def cancel_meeting(db: Session, employee_id: int, meeting_id: int) -> None:
     """

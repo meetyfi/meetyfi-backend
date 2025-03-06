@@ -45,9 +45,10 @@ class ProposedDate(Base):
     id = Column(Integer, primary_key=True, index=True)
     meeting_id = Column(Integer, ForeignKey("meetings.id"), index=True, nullable=False)
     date = Column(DateTime(timezone=True), nullable=False)
-    status = Column(Enum(MeetingStatus), default=MeetingStatus.PENDING, nullable=False)
+    status = Column(String, default="pending", nullable=False)
     proposed_by_id = Column(Integer, nullable=False)  # ID of the user who proposed this date
-    proposed_by_type = Column(Enum(UserType), nullable=False)  # Type of user who proposed (manager/employee)
+    proposed_by_type = Column(String, nullable=False)  # Type of user who proposed (manager/employee)
+    is_selected = Column(Boolean, default=False)  # Add this field
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
@@ -96,13 +97,18 @@ class Meeting(Base):
     date = Column(DateTime(timezone=True))
     duration = Column(Integer)  # in minutes
     location = Column(String, nullable=True)
-    status = Column(Enum(MeetingStatus), default=MeetingStatus.PENDING)
+    status = Column(String, default="pending", nullable=False)
     rejection_reason = Column(String, nullable=True)
-    created_by_type = Column(Enum(UserType))
+    created_by_id = Column(Integer, nullable=True)
+    created_by_type = Column(String)
     manager_id = Column(Integer, ForeignKey("managers.id"))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
-    
+
+    # Add client information
+    client_name = Column(String, nullable=False)
+    client_email = Column(String, nullable=False)
+    client_phone = Column(String, nullable=True)
 
     manager = relationship("Manager", back_populates="meetings")
     employees = relationship("EmployeeMeeting", back_populates="meeting")

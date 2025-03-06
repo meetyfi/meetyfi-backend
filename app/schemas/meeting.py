@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 from enum import Enum
@@ -15,17 +15,24 @@ class MeetingCreatorType(str, Enum):
     MANAGER = "manager"
     EMPLOYEE = "employee"
 
+# Client information
+class ClientInfo(BaseModel):
+    name: str = Field(..., min_length=2, max_length=100)
+    email: EmailStr
+    phone: Optional[str] = None
+
 # Base meeting schema with common fields
 class MeetingBase(BaseModel):
     title: str = Field(..., min_length=3, max_length=100)
     description: Optional[str] = None
     duration: int = Field(..., gt=0, le=480)  # Max 8 hours (in minutes)
     location: Optional[str] = None
+    client_info: ClientInfo  # Added client information
 
 # For creating a meeting by a manager
 class MeetingCreateRequest(MeetingBase):
     date: datetime
-    employee_ids: List[int] = Field(..., min_items=1)
+    employee_ids: Optional[List[int]] = None  # Optional for client meetings
 
 # For creating a meeting request by an employee
 class MeetingRequestCreate(MeetingBase):
@@ -68,6 +75,12 @@ class ManagerInMeeting(BaseModel):
     company_name: str
     profile_picture: Optional[str] = None
 
+# Client information response
+class ClientInfoResponse(BaseModel):
+    name: str
+    email: str
+    phone: Optional[str] = None
+
 # Meeting response for both manager and employee views
 class MeetingResponse(BaseModel):
     id: int
@@ -81,6 +94,7 @@ class MeetingResponse(BaseModel):
     created_by_type: MeetingCreatorType
     created_at: datetime
     updated_at: Optional[datetime] = None
+    client_info: ClientInfoResponse  # Added client information
     
     # These fields will be populated based on the viewer's role
     employees: Optional[List[EmployeeInMeeting]] = None
@@ -139,6 +153,7 @@ class CalendarEvent(BaseModel):
     status: MeetingStatus
     location: Optional[str] = None
     description: Optional[str] = None
+    client_name: str  # Added client name for calendar events
     
     class Config:
         orm_mode = True

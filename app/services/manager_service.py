@@ -2,12 +2,15 @@ from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_, func
 from typing import Dict, List, Any, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, date, timedelta  # Add date here
 
 from app.database import Manager, Employee, Meeting, Location, MeetingStatus, EmployeeMeeting, ProposedDate
 from app.schemas.manager import (
     ManagerProfileUpdate, MeetingCreateRequest, MeetingStatusUpdateRequest
 )
+
+from app.schemas.employee import MeetingRequestCreate
+from app.utils.validators import MeetingStatusTransitionValidator
 from app.exceptions import UserNotFoundException, PermissionDeniedException
 from app.utils.email import (
     send_meeting_notification, send_meeting_status_update, send_employee_verification_email
@@ -222,7 +225,7 @@ def get_employee_locations(db: Session, manager_id: int, hours: int = 24) -> Lis
 
 def create_meeting(db: Session, manager_id: int, meeting_data: MeetingCreateRequest) -> int:
     """
-    Create a new meeting by a manager
+    Create a new meeting by a manager with a client (directly accepted)
 
     Args:
         db: Database session
@@ -232,53 +235,91 @@ def create_meeting(db: Session, manager_id: int, meeting_data: MeetingCreateRequ
     Returns:
         int: ID of the created meeting
     """
-    # Verify all employees exist and belong to this manager
-    employees = db.query(Employee).filter(
-        and_(
-            Employee.id.in_(meeting_data.employee_ids),
-            Employee.manager_id == manager_id
-        )
-    ).all()
-
-    if len(employees) != len(meeting_data.employee_ids):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="One or more employees do not belong to this manager"
-        )
-
-    # Create the meeting
+    # Create the meeting with client info
     new_meeting = Meeting(
         title=meeting_data.title,
         description=meeting_data.description,
         date=meeting_data.date,
         duration=meeting_data.duration,
         location=meeting_data.location,
-        status=MeetingStatus.PENDING,
+        status=MeetingStatus.ACCEPTED,  # Directly accepted for manager-created meetings
         created_by_id=manager_id,
-        created_by_type="manager"
+        created_by_type="manager",
+        manager_id=manager_id,
+        client_name=meeting_data.client_info.name,
+        client_email=meeting_data.client_info.email,
+        client_phone=meeting_data.client_info.phone
     )
 
     db.add(new_meeting)
     db.commit()
     db.refresh(new_meeting)
 
-    # Add employees to the meeting
-    for employee in employees:
-        new_meeting.employees.append(employee)
+    # Add employees to the meeting if specified
+    if meeting_data.employee_ids:
+        employees = db.query(Employee).filter(
+            and_(
+                Employee.id.in_(meeting_data.employee_ids),
+                Employee.manager_id == manager_id
+            )
+        ).all()
+
+        if len(employees) != len(meeting_data.employee_ids):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="One or more employees do not belong to this manager"
+            )
+
+        for employee in employees:
+            new_meeting.employees.append(employee)
+
+            # Notify employees about the meeting
+            send_meeting_notification(
+                employee.email,
+                employee.name,
+                new_meeting.title,
+                new_meeting.date,
+                new_meeting.location
+            )
 
     db.commit()
 
-    # Notify employees about the meeting
-    for employee in employees:
-        send_meeting_notification(
+    return new_meeting.id
+
+def delete_meeting(db: Session, manager_id: int, meeting_id: int) -> None:
+    """
+    Delete/cancel a meeting
+    
+    Args:
+        db: Database session
+        manager_id: ID of the manager
+        meeting_id: ID of the meeting
+    """
+    meeting = db.query(Meeting).filter(Meeting.id == meeting_id).first()
+    if not meeting:
+        raise UserNotFoundException("Meeting not found")
+    
+    # Check if the manager is authorized to delete the meeting
+    if meeting.manager_id != manager_id:
+        raise PermissionDeniedException("You are not authorized to delete this meeting")
+    
+    # Option 1: Hard delete - completely remove the meeting
+    # db.delete(meeting)
+    
+    # Option 2: Soft delete - just mark as cancelled (recommended)
+    meeting.status = "cancelled"
+    meeting.updated_at = datetime.utcnow()
+    
+    db.commit()
+    
+    # Notify employees about the cancellation
+    for employee in meeting.employees:
+        send_meeting_status_update(
             employee.email,
             employee.name,
-            new_meeting.title,
-            new_meeting.date,
-            new_meeting.location
+            meeting.title,
+            "cancelled"
         )
-
-    return new_meeting.id
 
 def update_meeting_status(
     db: Session,
@@ -304,11 +345,14 @@ def update_meeting_status(
         raise PermissionDeniedException("You are not authorized to update this meeting")
 
     # Validate status transition
-    MeetingStatusUpdateRequest(meeting.status, status_data.status)
+    try:
+        MeetingStatusTransitionValidator.validate(meeting.status, status_data.status)
+    except ValueError as e:
+        raise InvalidStatusTransitionException(str(e))
 
-    # Update the meeting status
-    meeting.status = status_data.status
-    meeting.rejection_reason = status_data.reason if status_data.status == MeetingStatus.REJECTED else None
+    # Update the meeting status (ensure lowercase)
+    meeting.status = status_data.status  # Already lowercase from validator
+    meeting.rejection_reason = status_data.reason if status_data.status == "rejected" else None
     meeting.updated_at = datetime.utcnow()
     db.commit()
 
@@ -499,25 +543,201 @@ def select_meeting_date(
     for employee in meeting.employees:
         send_meeting_notification(employee.email, employee.name, meeting.title, selected_date)
 
-def get_meetings(
-    db: Session,  # ✅ Add this parameter
-    manager_id: int, 
-    skip: int = 0, 
-    limit: int = 100, 
-    status: Optional[str] = None, 
-    employee_id: Optional[int] = None,
-) -> List[Meeting]:
+def create_meeting(db: Session, manager_id: int, meeting_data: MeetingCreateRequest) -> int:
     """
-    Get meetings for a manager with optional filtering by status and employee.
+    Create a new meeting by a manager with a client (directly accepted)
+
+    Args:
+        db: Database session
+        manager_id: ID of the manager
+        meeting_data: Meeting creation data
+
+    Returns:
+        int: ID of the created meeting
+    """
+    # Create the meeting with client info
+    new_meeting = Meeting(
+        title=meeting_data.title,
+        description=meeting_data.description,
+        date=meeting_data.date,
+        duration=meeting_data.duration,
+        location=meeting_data.location,
+        status="accepted",
+        created_by_id=manager_id,
+        created_by_type="manager",
+        manager_id=manager_id,
+        client_name=meeting_data.client_info.name,
+        client_email=meeting_data.client_info.email,
+        client_phone=meeting_data.client_info.phone
+    )
+
+    db.add(new_meeting)
+    db.commit()
+    db.refresh(new_meeting)
+
+    # Add employees to the meeting if specified
+    if meeting_data.employee_ids:
+        employees = db.query(Employee).filter(
+            and_(
+                Employee.id.in_(meeting_data.employee_ids),
+                Employee.manager_id == manager_id
+            )
+        ).all()
+
+        if len(employees) != len(meeting_data.employee_ids):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="One or more employees do not belong to this manager"
+            )
+
+        for employee in employees:
+            new_meeting.employees.append(employee)
+
+            # Notify employees about the meeting
+            send_meeting_notification(
+                employee.email,
+                employee.name,
+                new_meeting.title,
+                new_meeting.date,
+                new_meeting.location
+            )
+
+    db.commit()
+
+    return new_meeting.id
+
+def request_meeting(db: Session, employee_id: int, meeting_data: MeetingRequestCreate) -> int:
+    """
+    Request a meeting with the manager and a client
+
+    Args:
+        db: Database session
+        employee_id: ID of the employee
+        meeting_data: Meeting request data
+
+    Returns:
+        int: ID of the created meeting
+    """
+    employee = db.query(Employee).filter(Employee.id == employee_id).first()
+    if not employee:
+        raise NotFoundException("Employee not found")
+
+    # Create new meeting with client info
+    new_meeting = Meeting(
+        title=meeting_data.title,
+        description=meeting_data.description,
+        duration=meeting_data.duration,
+        location=meeting_data.location,
+        status="pending",
+        created_by_id=employee_id,
+        created_by_type="employee",
+        manager_id=employee.manager_id,
+        client_name=meeting_data.client_info.name,
+        client_email=meeting_data.client_info.email,
+        client_phone=meeting_data.client_info.phone
+    )
+
+
+    db.add(new_meeting)
+    db.commit()
+    db.refresh(new_meeting)
+
+    # Add proposed dates
+    for date in meeting_data.proposed_dates:
+        proposed_date = ProposedDate(
+            meeting_id=new_meeting.id,
+            date=date,
+            proposed_by_id=employee_id,
+            proposed_by_type="employee",
+            status=MeetingStatus.PENDING
+        )
+        db.add(proposed_date)
+
+    db.commit()
+
+    # Get manager details
+    manager = db.query(Manager).filter(Manager.id == employee.manager_id).first()
+
+    # Send notification to manager
+    send_meeting_notification(
+        manager.email,
+        manager.name,
+        f"Meeting request from {employee.name} with client {meeting_data.client_info.name}",
+        new_meeting.title,
+        meeting_data.proposed_dates,
+        new_meeting.id
+    )
+
+    return new_meeting.id
+
+def get_meetings(
+    db: Session,
+    manager_id: int,
+    status: Optional[str] = None,
+    date_from: Optional[date] = None,
+    date_to: Optional[date] = None,
+    page: int = 1,
+    limit: int = 10
+) -> Dict[str, Any]:
+    """
+    Get meetings for a manager with optional filtering
     """
     query = db.query(Meeting).filter(Meeting.manager_id == manager_id)
-    
+
     if status:
         query = query.filter(Meeting.status == status)
-    
-    if employee_id:
-        query = query.join(EmployeeMeeting).filter(EmployeeMeeting.meeting_id == Meeting.id, EmployeeMeeting.employee_id == employee_id)
-    
-    meetings = query.order_by(Meeting.date.desc()).offset(skip).limit(limit).all()
-    
-    return meetings
+
+    if date_from:
+        query = query.filter(Meeting.date >= date_from)
+
+    if date_to:
+        query = query.filter(Meeting.date <= date_to)
+
+    total = query.count()
+
+    meetings = query.order_by(Meeting.date.desc()).offset((page - 1) * limit).limit(limit).all()
+
+    meeting_list = []
+    for meeting in meetings:
+        # Get employees for this meeting
+        employee_list = []
+        for emp_meeting in meeting.employees:
+            employee = emp_meeting.employee
+            employee_list.append({
+                "id": employee.id,
+                "name": employee.name,
+                "email": employee.email,
+                "role": employee.role,
+                "department": employee.department
+            })
+
+        # Include client information
+        client_info = {
+            "name": meeting.client_name,
+            "email": meeting.client_email,
+            "phone": meeting.client_phone
+        }
+
+        meeting_dict = {
+            "id": meeting.id,
+            "title": meeting.title,
+            "description": meeting.description,
+            "date": meeting.date,
+            "duration": meeting.duration,
+            "location": meeting.location,
+            "status": meeting.status,
+            "rejection_reason": meeting.rejection_reason,
+            "created_by_type": meeting.created_by_type,
+            "created_at": meeting.created_at,
+            "client_info": client_info,
+            "employees": employee_list
+        }
+
+        meeting_list.append(meeting_dict)
+
+    return {
+        "meetings": meeting_list,
+        "total": total,
+        "page": page,
+        "limit": limit
+    }

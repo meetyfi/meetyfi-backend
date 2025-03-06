@@ -13,7 +13,7 @@ from app.services.manager_service import (
     get_manager_profile, update_manager_profile,
     add_employee, get_employees, get_employee_by_id,
     delete_employee, get_employee_locations,
-    create_meeting, get_meetings, update_meeting_status,
+    create_meeting, get_meetings, update_meeting_status, delete_meeting
     
 )
 from app.dependencies import get_db, get_current_manager
@@ -95,7 +95,12 @@ async def remove_employee(
     db: Session = Depends(get_db)
 ):
     """Delete an employee"""
-    delete_employee(db, current_manager.id, employee_id)
+    # Change this:
+    # delete_employee(db, current_manager.id, employee_id)
+
+    # To this (matching your function definition):
+    delete_employee(employee_id, current_manager.id, db)
+
     return {"message": "Employee deleted successfully"}
 
 @router.get("/employees/locations", response_model=EmployeeLocationResponse)
@@ -126,7 +131,7 @@ async def schedule_meeting(
     current_manager = Depends(get_current_manager),
     db: Session = Depends(get_db)
 ):
-    """Create a new meeting"""
+    """Create a new meeting with a client"""
     meeting_id = create_meeting(db, current_manager.id, meeting)
     return {"message": "Meeting created successfully", "meeting_id": meeting_id}
 

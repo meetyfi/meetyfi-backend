@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from typing import Optional, List, Dict, Any
 from datetime import datetime, date
 from enum import Enum
@@ -43,13 +43,22 @@ class TimeSlot(BaseModel):
     end_time: datetime
 
 class ManagerAvailabilityResponse(BaseModel):
-    available_slots: List[TimeSlot]
+    date: str
+    time: str
+    status: str
+    available_slots: Dict[str, str] = {}  # Include this to satisfy the
 
 # Location
 class LocationCreateRequest(BaseModel):
     latitude: float = Field(..., ge=-90, le=90)
     longitude: float = Field(..., ge=-180, le=180)
     address: str
+
+# Client information for meetings
+class ClientInfo(BaseModel):
+    name: str = Field(..., min_length=2, max_length=100)
+    email: EmailStr
+    phone: Optional[str] = None
 
 # Meetings
 class MeetingStatus(str, Enum):
@@ -64,11 +73,17 @@ class MeetingRequestCreate(BaseModel):
     proposed_dates: List[datetime] = Field(..., min_items=1, max_items=5)
     duration: int = Field(..., gt=0, le=480)  # Max 8 hours
     location: Optional[str] = None
+    client_info: ClientInfo  # Added client information
 
     @field_validator('proposed_dates')
     def validate_dates(cls, v):
         validate_proposed_dates(v)
         return v
+
+class ClientInfoResponse(BaseModel):
+    name: str
+    email: str
+    phone: Optional[str] = None
 
 class MeetingResponse(BaseModel):
     id: int
@@ -80,6 +95,7 @@ class MeetingResponse(BaseModel):
     status: MeetingStatus
     rejection_reason: Optional[str] = None
     manager: Dict[str, Any]  # Basic manager info
+    client_info: ClientInfoResponse  # Added client information
     created_at: datetime
 
 class MeetingListResponse(BaseModel):

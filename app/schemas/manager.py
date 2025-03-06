@@ -54,7 +54,7 @@ class EmployeeResponse(BaseModel):
     profile_picture: Optional[str] = None
     is_verified: bool
     created_at: datetime
-    location: Optional[LocationData] = None  # Add this field
+    location: Optional[LocationData] = None
 
     class Config:
         from_attributes = True
@@ -77,6 +77,12 @@ class EmployeeLocationItem(BaseModel):
 class EmployeeLocationResponse(BaseModel):
     employee_locations: List[EmployeeLocationItem]
 
+# Client information for meetings
+class ClientInfo(BaseModel):
+    name: str = Field(..., min_length=2, max_length=100)
+    email: EmailStr
+    phone: Optional[str] = None
+
 # Meetings
 class MeetingStatus(str, Enum):
     PENDING = "pending"
@@ -90,8 +96,9 @@ class MeetingCreateRequest(BaseModel):
     date: datetime
     time: Optional[str] = None  # If time is separate from date
     duration: int = Field(..., gt=0, le=480)  # Max 8 hours
-    employee_ids: List[int] = Field(..., min_items=1)
+    employee_ids: Optional[List[int]] = None  # Optional for client meetings
     location: Optional[str] = None
+    client_info: ClientInfo  # Added client information
 
 class EmployeeInMeeting(BaseModel):
     id: int
@@ -99,6 +106,11 @@ class EmployeeInMeeting(BaseModel):
     email: str
     role: Optional[str] = None
     department: Optional[str] = None
+
+class ClientInfoResponse(BaseModel):
+    name: str
+    email: str
+    phone: Optional[str] = None
 
 class MeetingResponse(BaseModel):
     id: int
@@ -111,6 +123,7 @@ class MeetingResponse(BaseModel):
     rejection_reason: Optional[str] = None
     created_by_type: str
     created_at: datetime
+    client_info: ClientInfoResponse  # Added client information
     employees: List[EmployeeInMeeting]
 
 class MeetingListResponse(BaseModel):
@@ -120,5 +133,12 @@ class MeetingListResponse(BaseModel):
     limit: int
 
 class MeetingStatusUpdateRequest(BaseModel):
-    status: MeetingStatus
+    status: str  # Use str instead of enum to avoid case issues
     reason: Optional[str] = None
+
+    @field_validator('status')
+    def validate_status(cls, v):
+        valid_statuses = ["pending", "accepted", "rejected", "cancelled"]
+        if v.lower() not in valid_statuses:
+            raise ValueError(f"Invalid status. Must be one of: {', '.join(valid_statuses)}")
+        return v.lower()  # Always return lowercase

@@ -45,12 +45,23 @@ async def get_manager(
 
 @router.get("/managers/availability", response_model=ManagerAvailabilityResponse)
 async def get_availability(
-    date: date,
+    date: date = Query(..., description="Date to check availability (YYYY-MM-DD)"),
+    time: str = Query(..., description="Time to check availability (HH:MM)"),
     current_employee = Depends(get_current_employee),
     db: Session = Depends(get_db)
 ):
-    """Get manager availability"""
-    return get_manager_availability(db, current_employee.id, date)
+    """Get manager availability for a specific date and time"""
+    # Parse the time string to a time object
+    try:
+        hour, minute = map(int, time.split(':'))
+        time_obj = time(hour=hour, minute=minute)
+    except (ValueError, TypeError):
+        raise HTTPException(
+            status_code=400, 
+            detail="Invalid time format. Please use HH:MM format (e.g., 14:30)"
+        )
+    
+    return get_manager_availability(db, current_employee.id, date, time_obj)
 
 @router.post("/location", response_model=dict)
 async def create_location(
@@ -68,9 +79,9 @@ async def create_meeting_request(
     current_employee = Depends(get_current_employee),
     db: Session = Depends(get_db)
 ):
-    """Request a meeting with manager"""
+    """Request a meeting with manager and client"""
     meeting_id = request_meeting(db, current_employee.id, meeting)
-    return {"message": "Meeting request sent successfully", "meeting_id": meeting_id}
+    return {"message": "Meeting request with client sent successfully", "meeting_id": meeting_id}
 
 @router.get("/meetings", response_model=MeetingListResponse)
 async def list_meetings(

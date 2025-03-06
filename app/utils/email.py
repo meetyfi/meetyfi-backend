@@ -2,7 +2,7 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import logging
-from typing import List, Optional
+from typing import List, Optional, Union
 import random
 import string
 from datetime import datetime, timedelta
@@ -95,8 +95,7 @@ def send_otp_email(email: str, otp: str, name: str = None) -> bool:
     return send_email(email, subject, html_content, text_content)
 
 def send_employee_verification_email(email: str, manager_name: str, company_name: str, verification_token: str) -> bool:
-    """Send invitation email to employee"""
-    verification_link = f"{settings.FRONTEND_URL}/employee/verify?token={verification_token}"
+    """Send invitation email to employee with verification token"""
     
     subject = f"Invitation to join {company_name}"
     html_content = f"""
@@ -105,9 +104,9 @@ def send_employee_verification_email(email: str, manager_name: str, company_name
         <h2>You've been invited!</h2>
         <p>Hello,</p>
         <p>{manager_name} from {company_name} has invited you to join their team.</p>
-        <p>Please click the link below to set up your account:</p>
-        <p><a href="{verification_link}">Set up your account</a></p>
-        <p>This link will expire in 7 days.</p>
+        <p>Please use the following verification key to set up your account:</p>
+        <p><strong>{verification_token}</strong></p>
+        <p>This key will expire in 7 days.</p>
         <p>If you did not expect this invitation, please ignore this email.</p>
     </body>
     </html>
@@ -117,34 +116,53 @@ def send_employee_verification_email(email: str, manager_name: str, company_name
     
     {manager_name} from {company_name} has invited you to join their team.
     
-    Please visit the following link to set up your account:
-    {verification_link}
+    Please use the following verification key to set up your account:
+    {verification_token}
     
-    This link will expire in 7 days.
+    This token will expire in 7 days.
     
     If you did not expect this invitation, please ignore this email.
     """
     
     return send_email(email, subject, html_content, text_content)
 
+
+
+
 def send_meeting_notification(
-    email: str, 
-    meeting_title: str, 
-    meeting_date: datetime,
+    email: str,
+    meeting_title: str,
+    meeting_date: Union[datetime, List[datetime]],  # Can be a single date or list of dates
     meeting_location: str,
     created_by: str,
     is_request: bool = False
 ) -> bool:
     """Send meeting notification email"""
-    formatted_date = meeting_date.strftime("%A, %B %d, %Y at %I:%M %p")
-    
+    # Handle single date or multiple proposed dates
+    if isinstance(meeting_date, list):
+        # Format multiple proposed dates
+        formatted_dates = "<ul>"
+        for date in meeting_date:
+            formatted_dates += f"<li>{date.strftime('%A, %B %d, %Y at %I:%M %p')}</li>"
+        formatted_dates += "</ul>"
+        date_display = f"Proposed dates: {formatted_dates}"
+
+        # Plain text version
+        plain_dates = "\n".join([f"- {date.strftime('%A, %B %d, %Y at %I:%M %p')}" for date in meeting_date])
+        plain_date_display = f"Proposed dates:\n{plain_dates}"
+    else:
+        # Format single date
+        formatted_date = meeting_date.strftime("%A, %B %d, %Y at %I:%M %p")
+        date_display = f"Date & Time: {formatted_date}"
+        plain_date_display = f"Date & Time: {formatted_date}"
+
     if is_request:
         subject = f"New Meeting Request: {meeting_title}"
         action_text = "requested a meeting"
     else:
         subject = f"New Meeting Scheduled: {meeting_title}"
         action_text = "scheduled a meeting"
-    
+
     html_content = f"""
     <html>
     <body>
@@ -152,26 +170,26 @@ def send_meeting_notification(
         <p>{created_by} has {action_text} with you:</p>
         <div style="background-color: #f0f0f0; padding: 15px; margin: 10px 0;">
             <p><strong>Title:</strong> {meeting_title}</p>
-            <p><strong>Date & Time:</strong> {formatted_date}</p>
+            <p><strong>{date_display}</strong></p>
             <p><strong>Location:</strong> {meeting_location}</p>
         </div>
         <p>Please log in to your account to view more details or respond to this meeting.</p>
     </body>
     </html>
     """
-    
+
     text_content = f"""
     {subject}
-    
+
     {created_by} has {action_text} with you:
-    
+
     Title: {meeting_title}
-    Date & Time: {formatted_date}
+    {plain_date_display}
     Location: {meeting_location}
-    
+
     Please log in to your account to view more details or respond to this meeting.
     """
-    
+
     return send_email(email, subject, html_content, text_content)
 
 def send_meeting_status_update(
