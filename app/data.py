@@ -3,8 +3,14 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from app.config import settings
 
-# Create the database engine using the DATABASE_URL from the settings
-engine = create_engine(settings.DATABASE_URL)
+# Create the database engine with updated connection pool parameters
+engine = create_engine(
+    settings.DATABASE_URL,
+    pool_size=10,        # Increase from default 5
+    max_overflow=20,     # Increase from default 10
+    pool_timeout=60,     # Increase timeout if needed
+    pool_recycle=3600    # Recycle connections after 1 hour
+)
 
 # Create a session factory
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
